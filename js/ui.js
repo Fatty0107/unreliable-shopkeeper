@@ -17,6 +17,11 @@ function avail(id){ return (S.inv[id]||0) - inMix(id); }
 function hearts(n){ let s='<div class="hearts">'; for(let i=0;i<5;i++) s+=`<span class="${i<n?'':'off'}">${icon('heart',13)}</span>`; return s+'</div>'; }
 function purse(b){ return b<=30?'Light purse':b<=45?'Comfortable purse':b<=60?'Well-heeled':'Deep pockets'; }
 function curCust(){ return S.queue.find(q=>q.id===S.selCust); }
+/* keep every scrolled list where the player left it when the screen re-renders */
+function scrollKey(el){ if(el.id) return '#'+el.id; const cls=(typeof el.className==='string'?el.className:'').split(/\s+/).filter(c=>c&&!/^(enter|sel|on|active|show|hot|open)$/.test(c)).join('.'); const sel=el.tagName.toLowerCase()+(cls?'.'+cls:''); let i=0; try{ i=[...document.querySelectorAll(sel)].indexOf(el); }catch(e){ return null; } return sel+'|'+i; }
+function scrollSnap(){ const out=[]; document.querySelectorAll('#view *, #modal *').forEach(el=>{ if(el.scrollTop>0||el.scrollLeft>0){ const k=scrollKey(el); if(k) out.push([k,el.scrollTop,el.scrollLeft]); } }); return out; }
+function scrollRestore(list){ list.forEach(([k,t,l])=>{ let el=null; if(k[0]==='#') el=document.getElementById(k.slice(1)); else { const j=k.lastIndexOf('|'); try{ el=document.querySelectorAll(k.slice(0,j))[+k.slice(j+1)]; }catch(e){} } if(el){ el.scrollTop=t; el.scrollLeft=l; } }); }
+const keepScroll=fn=>function(...a){ const s=scrollSnap(); const r=fn.apply(this,a); scrollRestore(s); return r; };
 function getPotion(uid){ return S.stock.find(p=>p.uid===uid); }
 
 /* ---------- master render ---------- */
@@ -794,4 +799,5 @@ function boot(){
   bindEvents(); fit(); S3D.init(); FX.init(); addFoliage(); S.screen='shop'; render(); showTitle(); S3D.sync();
   document.addEventListener('pointerdown', ()=>SND.start(), {once:true});
 }
+render=keepScroll(render); refreshBrew=keepScroll(refreshBrew); refreshCauldron=keepScroll(refreshCauldron);
 boot();
