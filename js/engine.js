@@ -28,10 +28,10 @@ function load(){ try{ const t=localStorage.getItem(SAVE_KEY); if(t){ const o=JSO
 
 /* ---------- Brewing resolver: emergent potion effects ---------- */
 const HEAT_MOD = {
-  cold:{mul:{COOL:1.3,PRESERVE:1.3,SOOTHE:1.3,HUSH:1.2,WARM:.7,SPARK:.7},stab:6},
+  cold:{mul:{COOL:1.3,PRESERVE:1.3,SOOTHE:1.3,HUSH:1.2,BREATHE:1.3,SHRINK:1.2,WARM:.7,SPARK:.7,SWIFT:.8},stab:6},
   gentle:{mul:{},stab:8},
   simmer:{mul:'all1.12',stab:0},
-  boil:{mul:{WARM:1.3,SPARK:1.3,CHEER:1.3,RESONATE:1.3},stab:-14},
+  boil:{mul:{WARM:1.3,SPARK:1.3,CHEER:1.3,RESONATE:1.3,MIGHT:1.3,SWIFT:1.2},stab:-14},
   flare:{mul:{SPARK:1.5,GLOW:1.5},stab:-24}
 };
 function bottleFor(main, quirky){
@@ -39,10 +39,17 @@ function bottleFor(main, quirky){
   if(['SLEEP','DREAM','MEND','SOOTHE','WARM','CHEER'].includes(main)) return 'round';
   if(['REVEAL','REMEMBER','RESONATE','HUSH'].includes(main)) return 'vial';
   if(['FLOAT','GUIDE','COOL','PROTECT'].includes(main)) return 'flat';
-  if(['BIND','PRESERVE','GROW'].includes(main)) return 'jar';
+  if(['BIND','PRESERVE','GROW','MIGHT'].includes(main)) return 'jar';
+  if(['BREATHE','SWIFT'].includes(main)) return 'flat';
+  if(main==='CHARM') return 'round';
   if(['STEADY','SPARK','GLOW'].includes(main)) return 'dropper';
   return 'oddity';
 }
+const techOK = (f,heat,stir) => (!f.heat || f.heat===heat) && (!f.stir || f.stir===stir);
+const techN = f => (f.heat?1:0)+(f.stir?1:0);
+function matchFormula(mix, heat, stir){ return FORMULAS.filter(f=>f.core.every(c=>mix[c]>0) && techOK(f,heat,stir)).sort((a,b)=>techN(b)-techN(a) || b.core.length-a.core.length || a.id.localeCompare(b.id))[0]; }
+function siblings(f){ const k=[...f.core].sort().join('|'); return FORMULAS.filter(g=>[...g.core].sort().join('|')===k); }
+const techLabel = f => { const h=f.heat&&HEATS.find(x=>x.id===f.heat), s=f.stir&&STIRS.find(x=>x.id===f.stir); return [h&&h.n, s&&s.n+' stir'].filter(Boolean).join(' · ') || 'Any fire, any stir'; };
 function mixKey(mix, heat, stir){ const ids=Object.keys(mix).filter(k=>mix[k]>0).sort(); return ids.map(i=>i+':'+mix[i]).join('|')+'#'+heat+'#'+stir; }
 
 function resolve(mix, heat, stir){
@@ -61,7 +68,7 @@ function resolve(mix, heat, stir){
 
   const rank = b => score[b] * (src[b].length>=2 ? 1.6 : 1);
   let order = Object.keys(score).sort((a,b)=>rank(b)-rank(a) || a.localeCompare(b));
-  const fm = FORMULAS.filter(f=>f.core.every(c=>mix[c]>0)).sort((a,b)=>b.core.length-a.core.length || a.id.localeCompare(b.id))[0];
+  const fm = matchFormula(mix, heat, stir);
 
   let main, sec, expressed, murky=false, formula=null, wild=null;
   if(fm){
@@ -126,9 +133,12 @@ function preview(mix){
   const cnt={}; ids.forEach(id=>INGM[id].b.forEach(b=>cnt[b]=(cnt[b]||0)+1));
   const shared = Object.keys(cnt).filter(b=>cnt[b]>=2);
   const knownShared = shared.filter(b=>ids.filter(id=>INGM[id].b.includes(b)).every(id=>(S.known[id]||[]).includes(b)));
-  const fm = FORMULAS.find(f=>f.core.every(c=>mix[c]>0));
-  if(fm && S.formulas[fm.id]) return {text:`You recognise this: ${S.formulas[fm.id].custom||fm.n}.`, tone:'known'};
-  if(fm) return {text:'The brew is humming a tune you almost recognise…', tone:'formula'};
+  const fm = matchFormula(mix, S.brew.heat, S.brew.stir);
+  const sib = fm ? siblings(fm) : FORMULAS.filter(f=>f.core.every(c=>mix[c]>0));
+  const hidden = sib.filter(f=>!S.formulas[f.id] && f!==fm).length;
+  if(fm && S.formulas[fm.id]) return {text:`You recognise this: ${S.formulas[fm.id].custom||fm.n}.${hidden?' Though a different fire or spoon might change it…':''}`, tone:'known'};
+  if(fm) return {text: (fm.heat||fm.stir) ? 'The fire and the spoon are doing something new to this…' : 'The brew is humming a tune you almost recognise…', tone:'formula'};
+  if(sib.length) return {text:'These three want to be something, but only over the right fire.', tone:'formula'};
   const conflict = QUIRKS.some(q=>cnt[q.a]&&cnt[q.b]);
   if(knownShared.length) return {text:`Something wants to be ${BEH[knownShared[0]].adj.toLowerCase()}${conflict?', but something else is arguing with it.':'.'}`, tone:'hint'};
   if(shared.length) return {text: conflict ? 'Two things in here disagree. Loudly. This could be interesting.' : `${shared.length>1?'Several things':'Something'} in here agree${shared.length>1?'':'s'} with each other. You can't tell what yet.`, tone: conflict?'warn':'hint'};

@@ -3,23 +3,9 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const first = n => n.replace(/^(The |Sir |Lord |Mrs\. |Count |Old )/,'').split(' ')[0];
 
-/* ---------- sound (WebAudio, synthesised) ---------- */
-const SND = { ctx:null,
-  play(type){ if(!S || !S.settings.sound) return; try{ if(!this.ctx) this.ctx = new (window.AudioContext||window.webkitAudioContext)(); const c=this.ctx; if(c.state==='suspended') c.resume();
-    const tone=(f,t0,d,typ='sine',vol=.12,f2)=>{ const o=c.createOscillator(), g=c.createGain(); o.type=typ; o.frequency.setValueAtTime(f,c.currentTime+t0); if(f2) o.frequency.exponentialRampToValueAtTime(f2,c.currentTime+t0+d); g.gain.setValueAtTime(0.0001,c.currentTime+t0); g.gain.exponentialRampToValueAtTime(vol,c.currentTime+t0+.01); g.gain.exponentialRampToValueAtTime(0.0001,c.currentTime+t0+d); o.connect(g).connect(c.destination); o.start(c.currentTime+t0); o.stop(c.currentTime+t0+d+.05); };
-    if(type==='click') tone(660,0,.06,'triangle',.06);
-    if(type==='add') tone(520,0,.18,'sine',.14,180);
-    if(type==='bubble') for(let i=0;i<9;i++) tone(200+Math.random()*500,i*.11,.14,'sine',.09,90+Math.random()*80);
-    if(type==='coin'){ tone(988,0,.1,'square',.05); tone(1319,.08,.28,'square',.05); }
-    if(type==='chime'){ tone(784,0,.6,'sine',.1); tone(1175,.12,.7,'sine',.08); tone(1568,.24,.8,'sine',.06); }
-    if(type==='oops'){ tone(400,0,.4,'sawtooth',.05,120); }
-    if(type==='page') tone(1800,0,.08,'triangle',.03,900);
-  }catch(e){} }
-};
-
 /* ---------- toasts ---------- */
 function toast(msg, hand=false, ic='sparkle'){ const t=document.createElement('div'); t.className='toast'+(hand?' hand':''); t.innerHTML=icon(ic,18)+`<span>${msg}</span>`; $('#toasts').appendChild(t); setTimeout(()=>t.remove(),3700); }
-function coinFly(amount, x=1320, y=60){ const d=document.createElement('div'); d.className='coinfly'; d.style.left=x+'px'; d.style.top=y+'px'; d.textContent=(amount>=0?'+':'')+amount; $('#stage').appendChild(d); setTimeout(()=>d.remove(),1300); }
+function coinFly(amount, fromEl){ const to=$('#pillCrowns'); if(fromEl && to) FX.coins(fromEl, to, Math.min(14, 4+Math.round(amount/6))); const p=stagePoint(to||fromEl,.5,1.7); const d=document.createElement('div'); d.className='coinfly'; d.style.left=(p.x-20)+'px'; d.style.top=(p.y)+'px'; d.textContent=(amount>=0?'+':'')+amount; $('#stage').appendChild(d); setTimeout(()=>d.remove(),1400); }
 
 /* ---------- helpers ---------- */
 const stars = n => '★'.repeat(n)+'<span style="opacity:.3">'+'★'.repeat(3-n)+'</span>';
@@ -34,8 +20,12 @@ function curCust(){ return S.queue.find(q=>q.id===S.selCust); }
 function getPotion(uid){ return S.stock.find(p=>p.uid===uid); }
 
 /* ---------- master render ---------- */
+let lastScreen=null;
 function render(){ renderTop(); const v=$('#view');
   ({shop:renderShop,brew:renderBrew,ingredients:renderIngredients,recipes:renderRecipes,market:renderMarket,ledger:renderLedger})[S.screen](v);
+  if(lastScreen!==S.screen){ v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter'); lastScreen=S.screen; clearTimeout(render._t); render._t=setTimeout(()=>v.classList.remove('enter'),650); }
+  else v.classList.remove('enter');
+  S3D.sync(); decorate(v); countTo($('[data-count="crowns"]'),'crowns',S.crowns); countTo($('[data-count="rep"]'),'rep',S.rep); countTo($('[data-count="notes"]'),'notes',S.notes);
   save();
 }
 function renderTop(){
@@ -50,18 +40,18 @@ function renderTop(){
      <span class="lbl">${timeLabel()}</span>${icon('moon',20)}
    </div>
    <button class="btn gold" style="flex:none;height:48px" data-act="closeShop" title="Close the shop for the night">${icon('moon',17)}Close shop</button>
-   <div class="pill" title="Crowns"><span class="cn">${icon('coin',18)}</span><div>${S.crowns}</div></div>
-   <div class="pill" title="Shop reputation"><span class="cn rep">${icon('star',17)}</span><div>${S.rep}</div></div>
-   <div class="pill" title="Research notes: spend to study ingredients"><span class="cn note">${icon('scroll',17)}</span><div>${S.notes}</div></div>
+   <div class="pill" id="pillCrowns" title="Crowns"><span class="cn">${icon('coin',18)}</span><b data-count="crowns">${shownVals.crowns ?? S.crowns}</b></div>
+   <div class="pill" title="Shop reputation"><span class="cn rep">${icon('star',17)}</span><b data-count="rep">${shownVals.rep ?? S.rep}</b></div>
+   <div class="pill" title="Research notes: spend to study ingredients"><span class="cn note">${icon('scroll',17)}</span><b data-count="notes">${shownVals.notes ?? S.notes}</b></div>
    <button class="btn round" data-act="sound" aria-label="Toggle sound">${icon(S.settings.sound?'sound':'mute',20)}</button>
-   <button class="btn round" data-act="menu" aria-label="Menu">${icon('gear',20)}</button>`;
+   <button class="btn round" data-act="menu" aria-label="Settings and menu">${icon('gear',20)}</button>`;
 }
 
 /* ================= SHOP ================= */
 function renderShop(v){
   v.innerHTML = `<div class="grid3" style="grid-template-columns:290px 1fr 380px">
     <section class="panel rail">${railHTML()}</section>
-    <section class="panel room" id="room">${roomHTML()}</section>
+    <section class="panel room ${S3D.ok?'room3d':''}" id="room">${roomHTML()}</section>
     <section class="panel side">${sideHTML()}</section></div>`;
 }
 function railHTML(){
@@ -87,6 +77,9 @@ function mallowHint(){
   return tips[S.day%tips.length];
 }
 function roomHTML(){
+  if(S3D.ok){ const st=shopStats(); return `<div class="roomtools">
+    <span class="stat">${icon('bottle',16)}Display <b>${st.display}</b></span><span class="stat">${icon('sparkle',16)}Charm <b>${st.charm}</b></span><span class="stat">${icon('heart',16)}Comfort <b>${st.comfort}</b></span><span class="stat">${icon('shop',16)}Traffic <b>${st.traffic}</b></span>
+    <span style="flex:1"></span><button class="btn ${S.editMode?'gold':''}" data-act="toggleEdit">${icon(S.editMode?'check':'hammer',18)}${S.editMode?'Done arranging':'Arrange shop'}</button></div>` + (S.editMode? buildHTML() : dialogHTML()); }
   const sc=1.15, ox=348, oy=192, WH=176;
   const P=(x,y)=>isoPt(x,y,ox,oy);
   const pts=a=>a.map(p=>p.join(',')).join(' ');
@@ -97,6 +90,11 @@ function roomHTML(){
     <linearGradient id="wallL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a2850"/><stop offset="1" stop-color="#5a3f5a"/></linearGradient>
     <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a3a8a"/><stop offset=".7" stop-color="#7a5ab8"/><stop offset="1" stop-color="#e8a0c0"/></linearGradient>
     <radialGradient id="warm" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffcf7a" stop-opacity=".45"/><stop offset="1" stop-color="#ffcf7a" stop-opacity="0"/></radialGradient>
+    <linearGradient id="shaftG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b8c8ff" stop-opacity=".34"/><stop offset="1" stop-color="#b8c8ff" stop-opacity="0"/></linearGradient>
+    <radialGradient id="lampG" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffc870" stop-opacity=".55"/><stop offset=".5" stop-color="#ff9a3c" stop-opacity=".18"/><stop offset="1" stop-color="#ff9a3c" stop-opacity="0"/></radialGradient>
+    <radialGradient id="magicG" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#c08cff" stop-opacity=".55"/><stop offset="1" stop-color="#c08cff" stop-opacity="0"/></radialGradient>
+    <linearGradient id="moonWash" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6a7cff" stop-opacity=".16"/><stop offset=".6" stop-color="#6a7cff" stop-opacity="0"/></linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="5"/></filter>
     <pattern id="stone" width="40" height="22" patternUnits="userSpaceOnUse"><rect width="40" height="22" fill="none"/><path d="M0 11h40M20 0v11M0 22h40M10 11v11M30 11v11" stroke="#2a1830" stroke-opacity=".22" stroke-width="1.5"/></pattern>
   </defs><g transform="scale(${sc})">`;
   // walls
@@ -142,6 +140,11 @@ function roomHTML(){
   for(let y=0;y<GRID_H;y++) for(let x=0;x<GRID_W;x++){ const a=P(x,y),b=P(x+1,y),c=P(x+1,y+1),d=P(x,y+1); const alt=(x+y)%2; s+=`<polygon class="${S.editMode?'tile':''}" data-x="${x}" data-y="${y}" points="${pts([a,b,c,d])}" fill="${alt?'#b88a5a':'#c89a68'}" stroke="#8f6a42" stroke-width="1"/>`; }
   // warm glow
   s+=`<ellipse cx="${P(5,3)[0]}" cy="${P(5,3)[1]}" rx="260" ry="130" fill="url(#warm)" pointer-events="none"/>`;
+  // moonlight shafts from the two arched windows onto the floor
+  [[3.9,5.9],[7.1,8.9]].forEach(([t1,t2])=>{ const w1=up(P(t1,0),150), w2=up(P(t2,0),150), f1=P(t1-1.2,4.6), f2=P(t2-1.2,4.6);
+    s+=`<polygon class="shaft" points="${pts([w1,w2,f2,f1])}" fill="url(#shaftG)" pointer-events="none"/>`; });
+  // soft contact shadows under furniture
+  S.layout.forEach(it=>{ if(FURN[it.type].flat) return; const [w,h]=fdims(it); const c=P(it.x+w/2,it.y+h/2); s+=`<ellipse cx="${c[0]}" cy="${c[1]+3}" rx="${(w+h)*17}" ry="${(w+h)*8.5}" fill="#1a0a20" opacity=".28" filter="url(#soft)" pointer-events="none"/>`; });
   // door mat
   const dm=[P(0,DOOR.y),P(1,DOOR.y),P(1,DOOR.y+1),P(0,DOOR.y+1)]; s+=`<polygon points="${pts(dm.map(p=>[(p[0]-dm[0][0])*.8+dm[0][0]+4,(p[1]-dm[0][1])*.8+dm[0][1]+2]))}" fill="#7a3a3a" stroke="${OL}" stroke-width="1.2" pointer-events="none"/>`;
   // items + people sorted by depth
@@ -163,6 +166,13 @@ function roomHTML(){
     });
   }
   drawables.sort((a,b)=>a.d-b.d).forEach(o=>s+=o.svg);
+  // light sources: candles, lanterns, the cauldron
+  S.layout.forEach(it=>{ const [w,h]=fdims(it); const c=P(it.x+w/2,it.y+h/2);
+    if(it.type==='candles') s+=`<ellipse class="glow" cx="${c[0]}" cy="${c[1]-34}" rx="90" ry="70" fill="url(#lampG)" pointer-events="none"/>`;
+    if(it.type==='lantern') s+=`<ellipse class="glow" cx="${c[0]+12}" cy="${c[1]-30}" rx="80" ry="64" fill="url(#lampG)" pointer-events="none" style="animation-delay:-1.1s"/>`;
+    if(it.type==='cauldron') s+=`<ellipse class="glow" cx="${c[0]}" cy="${c[1]-30}" rx="110" ry="80" fill="url(#magicG)" pointer-events="none" style="animation-delay:-.6s"/><ellipse class="glow" cx="${c[0]}" cy="${c[1]+4}" rx="70" ry="30" fill="url(#lampG)" pointer-events="none"/>`;
+    if(it.type==='window') s+=`<ellipse class="glow" cx="${c[0]}" cy="${c[1]-30}" rx="70" ry="50" fill="url(#magicG)" pointer-events="none" style="animation-delay:-2s"/>`; });
+  s+=`<rect x="-200" y="-200" width="1200" height="1100" fill="url(#moonWash)" pointer-events="none"/>`;
   s+=`<g id="ghost" class="ghost"></g></g>`;
   const st=shopStats();
   const tools = `<div class="roomtools">
@@ -255,8 +265,10 @@ function minimap(){
   return s+'</svg>';
 }
 function ghostAt(x,y){
-  const g=$('#ghost'); if(!g||!S.placing) return;
+  if(!S.placing) return;
   const it={id:'ghost',type:S.placing.type,x,y,rot:S.placing.rot};
+  if(S3D.ok){ S3D.ghost(it.type,x,y,it.rot,canPlace(S.layout,it,S.placing.moveId).ok); return; }
+  const g=$('#ghost'); if(!g) return;
   const ok=canPlace(S.layout,it,S.placing.moveId).ok; const [w,h]=fdims(it); const ox=348, oy=192;
   const A=isoPt(x,y,ox,oy),B=isoPt(x+w,y,ox,oy),C=isoPt(x+w,y+h,ox,oy),D=isoPt(x,y+h,ox,oy);
   g.innerHTML = `<polygon points="${[A,B,C,D].map(p=>p.join(',')).join(' ')}" fill="${ok?'#8fdc6f':'#ff8a80'}" fill-opacity=".45" stroke="${ok?'#8fdc6f':'#ff8a80'}" stroke-width="3"/>`+furnitureSVG(it,ox,oy,{});
@@ -266,7 +278,7 @@ function ghostAt(x,y){
 function renderBrew(v){
   v.innerHTML = `<div class="grid3" style="grid-template-columns:360px minmax(0,1fr) 390px;grid-template-rows:minmax(0,1fr) 236px">
    <section class="panel lib" style="grid-row:1/3">${libHTML()}</section>
-   <section class="panel" style="padding:0" id="cauldronPanel">${cauldronHTML()}</section>
+   <section class="panel ${S3D.ok?'bare':''}" style="padding:0" id="cauldronPanel">${cauldronHTML()}</section>
    <section style="display:flex;flex-direction:column;gap:14px;min-height:0">${briefHTML()}</section>
    <section class="paper notebook" style="grid-column:2/4">${notebookHTML()}</section></div>`;
 }
@@ -290,7 +302,9 @@ function ingCards(){
 function ingInfo(id){ const i=INGM[id]; const k=known(id);
   return `${ingArt(id,68)}<div style="min-width:0"><h4>${esc(i.n)}</h4><p>${esc(i.react)}</p><div class="flowrow">${i.b.map(b=>k.includes(b)?behChip(b):`<span class="chip unknown">???</span>`).join('')}<span class="chip" style="color:${RARITY[i.r].c}">${RARITY[i.r].n}</span></div></div>`; }
 
+const RUNES_FN=()=>`<div class="runes"><svg viewBox="0 0 300 300" aria-hidden="true"><circle cx="150" cy="150" r="140" fill="none" stroke="#f3d083" stroke-width="2" stroke-dasharray="2 6"/><circle cx="150" cy="150" r="126" fill="none" stroke="#c08cff" stroke-width="1.5"/><circle cx="150" cy="150" r="104" fill="none" stroke="#f3d083" stroke-width="1" opacity=".6"/>${Array.from({length:12},(_,i)=>{const a=i*Math.PI/6, x=150+Math.cos(a)*115, y=150+Math.sin(a)*115; return `<path d="M${x} ${y-6}l3 6-3 6-3-6z" fill="#f3d083" transform="rotate(${i*30} ${x} ${y})"/>`;}).join('')}<path d="M150 24L259 213H41z" fill="none" stroke="#c08cff" stroke-width="1" opacity=".6"/><path d="M150 276L41 87h218z" fill="none" stroke="#c08cff" stroke-width="1" opacity=".6"/></svg></div>`;
 function cauldronHTML(){
+  const RUNES=S3D.ok?'':RUNES_FN();
   const ids = S.brew.order.filter(id=>S.brew.mix[id]>0);
   const pv = preview(S.brew.mix);
   const col = ids.length? mixHex(ids.map(i=>INGM[i].p[0]), ids.map(i=>S.brew.mix[i])) : '#6a4a9a';
@@ -321,7 +335,7 @@ function cauldronHTML(){
   </svg>`;
   return `<div class="cauldron-wrap" style="height:100%">
     <div class="murmur ${pv.tone}">${esc(pv.text)}</div>
-    <div class="cauldron-stage" id="cstage">${caul}${tokens}${more>0?`<button class="overflow-chip" data-act="viewAll">+${more} more additions · view all</button>`:''}
+    <div class="cauldron-stage" id="cstage">${S3D.ok?'<div class="cauldron ph"></div>':RUNES+caul}${tokens}${more>0?`<button class="overflow-chip" data-act="viewAll">+${more} more additions · view all</button>`:''}
       ${!ids.length?`<div class="talk" style="position:absolute;left:0;right:0;top:24px;text-align:center;font-size:20px;color:var(--muted)">Click ingredients on the left to drop them in.<br>Add as many as you like.</div>`:''}</div>
     <div class="controls">
       <div><div class="lab">${icon('sun',14)}Heat</div><div class="seg" role="group" aria-label="Heat">${HEATS.map(h=>`<button class="${S.brew.heat===h.id?'on':''}" data-act="heat" data-v="${h.id}" title="${h.n}">${h.s}</button>`).join('')}</div></div>
@@ -348,7 +362,7 @@ function briefHTML(){
 }
 function notebookHTML(){
   const ex = S.experiments.slice(0,5);
-  const rum = FORMULAS.filter(f=>!S.formulas[f.id]).slice(0,4);
+  const rum = FORMULAS.filter(f=>!S.formulas[f.id]).sort((a,b)=>(siblings(b).some(g=>S.formulas[g.id])?1:0)-(siblings(a).some(g=>S.formulas[g.id])?1:0) || ((hashStr(a.id+S.day)%7)-(hashStr(b.id+S.day)%7))).slice(0,4);
   const exRows = ex.map((e,i)=>`<button class="exrow" style="background:none;border-left:0;border-right:0;border-top:0;width:100%;text-align:left" data-act="loadExp" data-i="${i}" title="Load this recipe into the cauldron">${Object.keys(e.mix).map((id,j)=>`${j?'<span class="plus">+</span>':''}${ingArt(id,28)}`).join('')}<span class="plus">→</span>${bottleArt(e.bottle,e.col,30)}<span class="nm">${esc(e.name)}</span><span style="font-family:var(--f-body);font-size:11px;font-weight:800;color:#8f6a3a">${e.heat}/${e.stir}</span></button>`).join('');
   return `<div class="pg"><h4>${icon('book',18)}Experiment log</h4>${exRows||'<div class="talk" style="color:#7a6a5a;font-size:17px">Nothing tried yet. Every brew is recorded here; click one to load it again.</div>'}</div>
    <div class="pg"><h4>${icon('scroll',18)}Marigold's rumours <span style="margin-left:auto;font-family:var(--f-body);font-size:12px;color:#8f6a3a">${Object.keys(S.formulas).length}/${FORMULAS.length} formulae</span></h4>${rum.map(f=>`<div class="rumour">${esc(f.hint)}</div>`).join('')}</div>`;
@@ -392,12 +406,12 @@ function renderRecipes(v){
   const kn = FORMULAS.filter(f=>S.formulas[f.id]); const rum = FORMULAS.filter(f=>!S.formulas[f.id]);
   const tab = S.bookTab;
   let list='', detail='';
-  if(tab==='known'){ list = kn.map(f=>`<button class="bentry ${S.bookSel===f.id?'sel':''}" data-act="bookSel" data-id="${f.id}">${bottleArt(f.bottle,f.col,40)}<div><span class="nm">${esc(S.formulas[f.id].custom||f.n)}</span><small>${BEH[f.main].adj} · first brewed day ${S.formulas[f.id].day}</small></div></button>`).join('') || `<div class="margin">No formulae yet. Rumours hint at what Marigold knew. Try combining their ingredients.</div>`;
+  if(tab==='known'){ list = kn.map(f=>`<button class="bentry ${S.bookSel===f.id?'sel':''}" data-act="bookSel" data-id="${f.id}">${bottleArt(f.bottle,f.col,40)}<div><span class="nm">${esc(S.formulas[f.id].custom||f.n)}</span><small>${BEH[f.main].adj} · ${f.heat||f.stir?esc(techLabel(f)):'first brewed day '+S.formulas[f.id].day}</small></div></button>`).join('') || `<div class="margin">No formulae yet. Rumours hint at what Marigold knew. Try combining their ingredients.</div>`;
     const f = FORMM[S.bookSel] && S.formulas[S.bookSel] ? FORMM[S.bookSel] : kn[0];
     if(f) detail = formulaPage(f); }
   if(tab==='exp'){ list = S.experiments.slice(0,40).map((e,i)=>`<button class="bentry ${S.bookSel==='e'+i?'sel':''}" data-act="bookSel" data-id="e${i}">${bottleArt(e.bottle,e.col,40)}<div><span class="nm">${esc(e.name)}</span><small>Day ${e.day} · ${Object.keys(e.mix).length} ingredients · ${e.quirks.length?'quirky':e.murky?'murky':'stable-ish'}</small></div></button>`).join('') || `<div class="margin">Your experiments will be written here, mistakes and all. The Guild likes honest records.</div>`;
     const idx = S.bookSel && S.bookSel[0]==='e' ? +S.bookSel.slice(1) : 0; const e=S.experiments[idx]; if(e) detail = expPage(e, idx); }
-  if(tab==='rum'){ list = rum.map(f=>`<button class="bentry ${S.bookSel===f.id?'sel':''}" data-act="bookSel" data-id="${f.id}"><div style="width:40px;height:40px;display:grid;place-items:center;border:2px dashed #8f6a3a;border-radius:10px;font-family:var(--f-hand);font-size:26px;color:#8f6a3a">?</div><div><span class="nm">An unnamed rumour</span><small>${f.core.length} ingredients, by the look of it</small></div></button>`).join('') || `<div class="margin">You've found every formula Marigold knew. She'd be insufferably proud.</div>`;
+  if(tab==='rum'){ list = rum.map(f=>`<button class="bentry ${S.bookSel===f.id?'sel':''}" data-act="bookSel" data-id="${f.id}"><div style="width:40px;height:40px;display:grid;place-items:center;border:2px dashed #8f6a3a;border-radius:10px;font-family:var(--f-hand);font-size:26px;color:#8f6a3a">?</div><div><span class="nm">${siblings(f).some(g=>S.formulas[g.id])?'A variation…':'An unnamed rumour'}</span><small>${f.heat||f.stir?'needs a particular fire':f.core.length+' ingredients, by the look of it'}</small></div></button>`).join('') || `<div class="margin">You've found every formula Marigold knew. She'd be insufferably proud.</div>`;
     const f = FORMM[S.bookSel] && !S.formulas[S.bookSel] ? FORMM[S.bookSel] : rum[0]; if(f) detail = rumourPage(f); }
   v.innerHTML = `<div class="book"><div class="page"><h2>Marigold's Recipe Journal</h2>
      <div class="btabs">${[['known',`Known formulae (${kn.length}/${FORMULAS.length})`],['exp',`Experiments (${S.experiments.length})`],['rum',`Rumours (${rum.length})`]].map(([k,l])=>`<button class="${tab===k?'on':''}" data-act="bookTab" data-tab="${k}">${l}</button>`).join('')}</div>
@@ -408,10 +422,12 @@ function recipeLine(mix, bottle, col){ return `<div class="recipeLine">${Object.
 function formulaPage(f){ const rec=S.formulas[f.id];
   return `<div style="display:flex;gap:16px;align-items:center">${bottleArt(f.bottle,f.col,120,{sparkle:true})}<div><div class="eyebrow" style="color:#7a6a5a">Known formula · ${BEH[f.main].adj} / ${BEH[f.sec].adj}</div><h2 class="hand" style="font-family:var(--f-hand);font-size:48px;line-height:.9;color:#2a1830">${esc(rec.custom||f.n)}</h2>${rec.custom?`<small style="font-weight:800;color:#7a6a5a">Marigold called it ${esc(f.n)}</small>`:''}</div></div>
    ${recipeLine(Object.fromEntries(f.core.map(c=>[c,1])), f.bottle, f.col)}
+   <div class="tech">${icon('sun',15)}<b>Technique</b> ${esc(techLabel(f))}</div>
    <p class="talk" style="font-size:20px;margin:0">${esc(f.fx)}</p>
    <div class="flowrow">${behChipDark(f.main,'main')}${behChipDark(f.sec,'sec')}</div>
+   ${siblings(f).length>1?`<div class="variants"><div class="eyebrow" style="color:#7a6a5a">Same pot, different fire</div>${siblings(f).filter(g=>g!==f).map(g=>S.formulas[g.id]?`<button class="vrow" data-act="bookSel" data-id="${g.id}">${bottleArt(g.bottle,g.col,30)}<span class="hand">${esc(S.formulas[g.id].custom||g.n)}</span><small>${esc(techLabel(g))}</small></button>`:`<div class="vrow unk"><span class="q">?</span><span class="hand">Something ${BEH[g.main].adj.toLowerCase()}…</span><small>try a different fire or spoon</small></div>`).join('')}</div>`:''}
    <div class="side-eff">${icon('scroll',14)} Disclosed side effect: ${esc(f.side)}</div>
-   <div class="margin">Extra ingredients are welcome: the formula is still recognised, and extras add their own character (and sometimes quirks).</div>
+   
    <div class="talk" style="color:#7a6a5a">First brewed on day ${rec.day}${rec.for?` for ${esc(rec.for)}`:''}.</div>
    <div><button class="btn gold" data-act="brewFormula" data-id="${f.id}">${icon('flask',16)}Load into cauldron</button></div>`; }
 function expPage(e, i){ return `<div style="display:flex;gap:16px;align-items:center">${bottleArt(e.bottle,e.col,110)}<div><div class="eyebrow" style="color:#7a6a5a">Experiment · Day ${e.day} · ${e.heat} heat, ${e.stir} stir</div><h2 class="hand" style="font-family:var(--f-hand);font-size:44px;line-height:.9;color:#2a1830">${esc(e.name)}</h2><div style="color:#b8862a">${stars(e.stars)}</div></div></div>
@@ -420,13 +436,16 @@ function expPage(e, i){ return `<div style="display:flex;gap:16px;align-items:ce
    <div class="flowrow">${behChipDark(e.main,'main')}${e.sec?behChipDark(e.sec,'sec'):''}${e.expressed.filter(b=>b!==e.main&&b!==e.sec).map(b=>behChipDark(b)).join('')}</div>
    ${e.quirkObjs.map(q=>`<div class="quirk"><b>Quirk: ${esc(q.name)}</b>${esc(cap(q.fx))}.</div>`).join('')}
    <div><button class="btn gold" data-act="loadExp" data-i="${i}">${icon('flask',16)}Load into cauldron</button></div>`; }
-function rumourPage(f){ return `<div class="eyebrow" style="color:#7a6a5a">Rumour</div><h2 class="hand" style="font-family:var(--f-hand);font-size:44px;color:#2a1830;line-height:.9">Something ${BEH[f.main].adj.toLowerCase()}…</h2>
+function rumourPage(f){ const sibKnown=siblings(f).some(g=>S.formulas[g.id]);
+  return `<div class="eyebrow" style="color:#7a6a5a">Rumour${sibKnown?' · a variation on something you know':''}</div><h2 class="hand" style="font-family:var(--f-hand);font-size:44px;color:#2a1830;line-height:.9">Something ${BEH[f.main].adj.toLowerCase()}…</h2>
    <div class="margin" style="font-size:26px">${esc(f.hint)}</div>
-   <div class="recipeLine">${f.core.map((c,j)=>`${j?'<span class="op">+</span>':''}<span class="ingmini"><span style="width:48px;height:48px;border:2px dashed #8f6a3a;border-radius:12px;display:grid;place-items:center;font-size:24px;color:#8f6a3a">?</span>???</span>`).join('')}<span class="op">→</span><span style="opacity:.35;filter:grayscale(1)">${bottleArt(f.bottle,f.col,56)}</span></div>
-   <p class="talk" style="font-size:18px;color:#5a4a6a">When the right ingredients share a pot, the cauldron recognises the formula, whatever else you add.</p>`; }
+   <div class="recipeLine">${f.core.map((c,j)=>`${j?'<span class="op">+</span>':''}<span class="ingmini">${sibKnown?ingArt(c,48)+esc(INGM[c].n):'<span style="width:48px;height:48px;border:2px dashed #8f6a3a;border-radius:12px;display:grid;place-items:center;font-size:24px;color:#8f6a3a">?</span>???'}</span>`).join('')}<span class="op">→</span><span style="opacity:.35;filter:grayscale(1)">${bottleArt(f.bottle,f.col,56)}</span></div>
+   <div class="tech">${icon('sun',15)}<b>Technique</b> ${f.heat||f.stir?'A particular fire and spoon. The note above is your clue.':'Any fire, any stir'}</div>
+   <p class="talk" style="font-size:18px;color:#5a4a6a">${sibKnown?'You already know these ingredients. Change the heat and the stirring, and the same pot becomes something else.':'When the right ingredients share a pot, the cauldron recognises the formula, whatever else you add.'}</p>
+   ${sibKnown?`<div><button class="btn gold" data-act="brewFormula" data-id="${siblings(f).find(g=>S.formulas[g.id]).id}">${icon('flask',16)}Load the ingredients</button></div>`:''}`; }
 
 /* ================= MARKET ================= */
-const NESSA_TIPS = ['Cold infusions keep a brew calm. Quirks hate the cold.','A rolling boil makes everything louder, quirks included.','Stir counter-clockwise if the second thing in the pot is the one you want.','If nothing in the pot shares a behaviour, you get murk. Find pairs.','A quick flare can shake loose something hidden in an ingredient. Unpredictably.','Alternate your stirring to settle a fussy brew.','Mushrooms that grow under bridges tend to be quiet things.','Customers say one thing and need another. Ask them a question before you brew.'];
+const NESSA_TIPS = ['Cold infusions keep a brew calm. Quirks hate the cold.','A rolling boil makes everything louder, quirks included.','Stir counter-clockwise if the second thing in the pot is the one you want.','If nothing in the pot shares a behaviour, you get murk. Find pairs.','A quick flare can shake loose something hidden in an ingredient. Unpredictably.','The same three ingredients can make three different potions. Change the fire. Change the spoon.','Counter-clockwise undoes things, dear. Try it on a recipe you already know.','Alternate your stirring to settle a fussy brew.','Mushrooms that grow under bridges tend to be quiet things.','Customers say one thing and need another. Ask them a question before you brew.'];
 function unlocked(i){ if(i.r==='R') return S.rep>=30||S.day>=3; if(i.r==='V') return S.rep>=50||S.day>=5; return true; }
 function renderMarket(v){
   v.innerHTML = `<div class="grid3" style="grid-template-columns:380px 1fr">
@@ -452,8 +471,8 @@ function renderLedger(v){
   const maxR = Math.max(40,...days.map(d=>d.revenue));
   const W=420,H=200, bw = Math.min(46,(W-40)/days.length-10);
   const ticks=[0,.5,1].map(t=>Math.round(maxR*t));
-  const bars = days.map((d,i)=>{ const x=40+i*((W-40)/days.length)+((W-40)/days.length-bw)/2; const h=(d.revenue/maxR)*(H-30); return `<rect x="${x}" y="${H-20-h}" width="${bw}" height="${h}" rx="6" fill="${d.live?'#f3d083':'#b98af5'}" opacity="${d.live?.95:.9}"/><text x="${x+bw/2}" y="${H-5}" text-anchor="middle" font-size="11" fill="#b4a3cf">D${d.day}</text>${d.revenue?`<text x="${x+bw/2}" y="${H-26-h}" text-anchor="middle" font-size="11" fill="#f1e8ff">${d.revenue}</text>`:''}`; }).join('');
-  const chart1 = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%">${ticks.map(t=>{ const y=H-20-(t/maxR)*(H-30); return `<line x1="36" x2="${W}" y1="${y}" y2="${y}" stroke="#fff" stroke-opacity=".08"/><text x="30" y="${y+4}" text-anchor="end" font-size="10" fill="#b4a3cf">${t}</text>`; }).join('')}${bars}</svg>`;
+  const bars = days.map((d,i)=>{ const x=40+i*((W-40)/days.length)+((W-40)/days.length-bw)/2; const h=(d.revenue/maxR)*(H-44); return `<rect x="${x}" y="${H-20-h}" width="${bw}" height="${h}" rx="6" fill="${d.live?'#f3d083':'#b98af5'}" opacity="${d.live?.95:.9}"/><text x="${x+bw/2}" y="${H-5}" text-anchor="middle" font-size="11" fill="#b4a3cf">D${d.day}</text>${d.revenue?`<text x="${x+bw/2}" y="${H-26-h}" text-anchor="middle" font-size="11" fill="#f1e8ff">${d.revenue}</text>`:''}`; }).join('');
+  const chart1 = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%">${ticks.map(t=>{ const y=H-20-(t/maxR)*(H-44); return `<line x1="36" x2="${W}" y1="${y}" y2="${y}" stroke="#fff" stroke-opacity=".08"/><text x="30" y="${y+4}" text-anchor="end" font-size="10" fill="#b4a3cf">${t}</text>`; }).join('')}${bars}</svg>`;
   // outcomes donut
   const oc = {delight:0,good:0,meh:0,baffled:0,oops:0}; custSales.forEach(s=>{ if(oc[s.outcome]!=null) oc[s.outcome]++; });
   const tot = Object.values(oc).reduce((a,b)=>a+b,0); let acc=0; const R=62, C=2*Math.PI*R;
@@ -478,7 +497,7 @@ function renderLedger(v){
 }
 
 /* ================= MODALS ================= */
-function modal(html){ const m=$('#modal'); m.innerHTML=html; m.classList.add('show'); }
+function modal(html){ const m=$('#modal'); m.innerHTML=html; m.classList.add('show'); decorate(m); }
 function closeModal(){ const m=$('#modal'); m.classList.remove('show'); m.innerHTML=''; }
 
 function showIntro(){
@@ -546,13 +565,15 @@ function showWeekEnd(){
    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px"><button class="btn gold" data-act="closeWeek">${icon('shop',18)}Keep the shop open</button></div></div>`);
 }
 
+function volRow(id,label,ic,val){ return `<label class="vol" for="${id}"><span>${icon(ic,18)}${label}</span><input type="range" id="${id}" min="0" max="100" value="${Math.round(val*100)}" data-vol="${id.replace('vol-','')}"><b>${Math.round(val*100)}</b></label>`; }
 function showMenu(){
-  modal(`<div class="mbox panel" style="width:460px;padding:24px;display:flex;flex-direction:column;gap:12px"><h2 class="ptitle">${icon('gear',20)}The Crooked Cork</h2>
-    <p class="muted" style="margin:0;font-size:14px;line-height:1.4">Your progress is saved in this browser automatically.</p>
-    <button class="btn" data-act="howto">${icon('question',18)}How to play</button>
-    <button class="btn" data-act="sound">${icon(S.settings.sound?'sound':'mute',18)}Sound: ${S.settings.sound?'on':'off'}</button>
-    <button class="btn red" data-act="askReset">${icon('refresh',18)}Start a new shop</button>
-    <button class="btn ghost" data-act="closeModal">Back to the shop</button></div>`);
+  const st=S.settings; const onTitle=document.body.classList.contains('on-title');
+  modal(`<div class="mbox panel settings"><h2 class="ptitle">${icon('gear',20)}Settings</h2>
+    <div class="vols">${volRow('vol-music','Music','sparkle',st.music??.55)}${volRow('vol-sfx','Effects','flask',st.sfx??.8)}${volRow('vol-amb','Shop ambience','moon',st.amb??.5)}</div>
+    <button class="btn" data-act="sound">${icon(st.sound!==false?'sound':'mute',18)}All sound: ${st.sound!==false?'on':'off'}</button>
+    <p class="muted" style="margin:0;font-size:13px;line-height:1.4">Your shop saves automatically in this browser.</p>
+    <div class="flowrow">${onTitle?'':`<button class="btn" data-act="toTitle">${icon('home',18)}Title screen</button>`}<button class="btn" data-act="howto">${icon('question',18)}How to play</button><button class="btn red" data-act="askReset">${icon('refresh',18)}New shop</button></div>
+    <button class="btn gold" data-act="closeModal" style="align-self:flex-end">${icon('check',18)}Done</button></div>`);
 }
 function showViewAll(){
   const ids=S.brew.order.filter(id=>S.brew.mix[id]>0);
@@ -564,11 +585,16 @@ function showViewAll(){
 /* ================= ACTIONS ================= */
 const ACT = {
   go(d){ S.screen=d.to; if(d.to!=='shop') S.editMode=false; SND.play('page'); render(); },
-  sound(){ S.settings.sound=!S.settings.sound; render(); if($('#modal').classList.contains('show')) showMenu(); },
+  sound(){ S.settings.sound=S.settings.sound===false; SND.apply(); render(); if($('#modal').classList.contains('show')) showMenu(); },
+  settings(){ showMenu(); },
+  toTitle(){ closeModal(); S.screen='shop'; render(); showTitle(); S3D.sync(); },
+  titlePlay(){ SND.start(); SND.play('chime'); hideTitle(); S3D.sync(); if(!S.seenIntro) setTimeout(showIntro,350); },
+  titleNew(){ SND.start(); ACT.askReset(); },
+  titleHow(){ SND.start(); showIntro(); },
   menu(){ showMenu(); }, closeModal(){ closeModal(); render(); }, howto(){ showIntro(); },
   askReset(){ modal(`<div class="mbox paper" style="width:460px;padding:24px"><h2 class="hand" style="font-size:40px;margin:0;color:#2a1830">Start over?</h2><p class="talk" style="font-size:18px">This clears your shop, journal and every discovery. Mallow will pretend not to notice.</p><div class="flowrow" style="justify-content:flex-end"><button class="btn ghost" style="color:#2a1830" data-act="closeModal">Keep my shop</button><button class="btn red" data-act="reset">Start a new shop</button></div></div>`); },
-  reset(){ S=newState(); buildQueue(); closeModal(); render(); showIntro(); },
-  startGame(){ S.seenIntro=true; closeModal(); SND.play('chime'); render(); },
+  reset(){ S=newState(); buildQueue(); closeModal(); hideTitle(); S3D.sync(); Object.keys(shownVals).forEach(k=>delete shownVals[k]); render(); showIntro(); },
+  startGame(){ S.seenIntro=true; closeModal(); SND.start(); SND.play('sting'); FX.flash(PAL.brassHi,.35); render(); },
   selCust(d){ S.selCust=d.id; if(S.screen!=='shop'){ S.screen='shop'; } S.editMode=false; SND.play('click'); render(); },
   selPotion(d){ const u=+d.uid; S.selPotion = S.selPotion===u? null : u; SND.play('click'); render(); },
   toShelf(d){ S.selPotion=+d.uid; S.screen='shop'; render(); },
@@ -594,7 +620,7 @@ const ACT = {
   addIng(d){ const id=d.id; if(avail(id)<=0){ toast(`Out of ${INGM[id].n}. Nessa sells more at the Market.`,false,'cart'); SND.play('oops'); return; }
     S.brew.mix[id]=(S.brew.mix[id]||0)+1; if(!S.brew.order.includes(id)) S.brew.order.push(id); if(S.brew.mix[id]===1) S.brew.justAdded=id; S.lastIng=id; SND.play('add');
     if(S.screen!=='brew'){ S.screen='brew'; render(); return; }
-    refreshBrew(); if($('#modal').classList.contains('show')) showViewAll(); },
+    refreshBrew(); FX.splash(cauldronPt(), INGM[id].p[0]); const cs=$('#cstage'); if(cs){ cs.classList.remove('plop'); void cs.offsetWidth; cs.classList.add('plop'); } if($('#modal').classList.contains('show')) showViewAll(); },
   quickAdd(d){ ACT.addIng(d); },
   decIng(d){ const id=d.id; if(!S.brew.mix[id]) return; S.brew.mix[id]--; if(!S.brew.mix[id]){ delete S.brew.mix[id]; S.brew.order=S.brew.order.filter(x=>x!==id); } SND.play('click'); refreshBrew(); if($('#modal').classList.contains('show')) showViewAll(); },
   rmIng(d){ delete S.brew.mix[d.id]; S.brew.order=S.brew.order.filter(x=>x!==d.id); SND.play('click'); refreshBrew(); if($('#modal').classList.contains('show')) showViewAll(); },
@@ -605,7 +631,7 @@ const ACT = {
   viewAll(){ showViewAll(); },
   libMode(d){ libFilter.mode=d.mode; $('#ingGrid').innerHTML=ingCards(); document.querySelectorAll('.filters button').forEach(b=>b.classList.toggle('on',b.dataset.mode===d.mode)); },
   loadExp(d){ const e=S.experiments[+d.i]; if(!e) return; loadMix(e.mix, e.heat, e.stir); },
-  brewFormula(d){ const f=FORMM[d.id]; loadMix(Object.fromEntries(f.core.map(c=>[c,1])), S.brew.heat, S.brew.stir); },
+  brewFormula(d){ const f=FORMM[d.id]; const base=siblings(f).find(g=>!g.heat&&!g.stir); loadMix(Object.fromEntries(f.core.map(c=>[c,1])), f.heat||((base&&base!==f)?S.brew.heat:(S.brew.heat)), f.stir||S.brew.stir); },
   brew(){ doBrew(); },
   resultOffer(d){ const nm=$('#nameIn'); applyName(nm&&nm.value); closeModal(); S.selCust=S.brewFor; S.selPotion=+d.uid; S.screen='shop'; render(); },
   resultKeep(){ const nm=$('#nameIn'); applyName(nm&&nm.value); closeModal(); render(); },
@@ -615,7 +641,7 @@ const ACT = {
   study(d){ if(S.notes<1) return; const i=INGM[d.id]; const b=i.b.find(x=>!known(d.id).includes(x)); if(!b) return; S.notes--; (S.known[d.id]=S.known[d.id]||[]).push(b); SND.play('chime'); toast(`Study notes: ${i.n} has ${b}.`,true,'scroll'); render(); },
   bookTab(d){ S.bookTab=d.tab; S.bookSel=null; SND.play('page'); render(); },
   bookSel(d){ S.bookSel=d.id; SND.play('page'); render(); },
-  buy(d){ const i=INGM[d.id], n=+d.n, cost=i.cost*n; if(S.crowns<cost) return; S.crowns-=cost; S.inv[d.id]=(S.inv[d.id]||0)+n; SND.play('coin'); toast(`Bought ${n} ${i.n}.`,false,'cart'); render(); },
+  buy(d){ const i=INGM[d.id], n=+d.n, cost=i.cost*n; if(S.crowns<cost) return; const src=document.querySelector(`[data-act="buy"][data-id="${d.id}"]`); const pt=stagePoint(src); S.crowns-=cost; S.inv[d.id]=(S.inv[d.id]||0)+n; SND.play('coin'); FX.emit(pt.x,pt.y,{count:10,type:'star',colors:[PAL.brassHi,INGM[d.id].p[0]],speed:3,life:700,size:4}); toast(`Bought ${n} ${i.n}.`,false,'cart'); render(); },
   // build mode
   toggleEdit(){ S.editMode=!S.editMode; S.placing=null; S.editSel=null; if(S.screen!=='shop') S.screen='shop'; SND.play('click'); render(); },
   pickFurn(d){ const k=d.type; const stored=S.storage[k]||0; if(!stored && S.crowns<FURN[k].cost){ toast(`You need ${FURN[k].cost} crowns for that.`,false,'coin'); return; } S.placing={type:k,rot:0}; S.editSel=null; SND.play('click'); render(); },
@@ -635,14 +661,15 @@ function loadMix(mix, heat, stir){
   Object.entries(mix).forEach(([id,q])=>{ const n=Math.min(q,S.inv[id]||0); if(n>0){ S.brew.mix[id]=n; S.brew.order.push(id);} });
   S.screen='brew'; render(); if(missing.length) toast(`Short on: ${missing.join(', ')}. Visit the Market.`,false,'cart');
 }
+function cauldronPt(){ return S3D.ok ? S3D.cauldronPos() : stagePoint($('.cauldron-stage .cauldron'),.5,.4); }
 function refreshBrew(){ if(S.screen!=='brew') return; $('#ingGrid').innerHTML=ingCards(); refreshCauldron(); $('#ingInfo').innerHTML=ingInfo(S.lastIng); save(); }
-function refreshCauldron(){ const c=$('#cauldronPanel'); if(c) c.innerHTML=cauldronHTML(); save(); }
+function refreshCauldron(){ const c=$('#cauldronPanel'); if(c) c.innerHTML=cauldronHTML(); S3D.sync(); save(); }
 
 function doBrew(){
   const mix={...S.brew.mix}; if(!Object.keys(mix).length) return;
   const res = resolve(mix, S.brew.heat, S.brew.stir);
   Object.entries(mix).forEach(([id,q])=>S.inv[id]-=q);
-  const stage=$('#cstage'); if(stage) stage.classList.add('brewing'); SND.play('bubble');
+  const stage=$('#cstage'); if(stage) stage.classList.add('brewing'); SND.play('bubble'); SND.play('whoosh'); const cpt=cauldronPt(); S3D.brewFx(); FX.emit(cpt.x,cpt.y,{count:40,type:'spark',colors:[res.col,PAL.magic,'#fff'],speed:5,angle:-Math.PI/2,spread:1.2,gravity:-.02,life:1100,size:4});
   document.querySelectorAll('.token').forEach((t,i)=>{ t.style.transition='all .5s ease-in '+(i*0.05)+'s'; t.style.left='310px'; t.style.top='160px'; t.style.opacity='0'; t.style.transform='translate(-50%,-50%) scale(.3)'; });
   setTimeout(()=>{
     const newRev=[]; res.reveals.forEach(([id,b])=>{ const k=(S.known[id]=S.known[id]||[]); if(!k.includes(b)){ k.push(b); newRev.push([id,b]); } });
@@ -660,8 +687,11 @@ function doBrew(){
     S._lastBrew={uid:p.uid,key:res.key,formula:res.formula};
     S.brew.mix={}; S.brew.order=[];
     render();
-    SND.play(newFormula||newQuirk?'chime':'add');
     showResult(res,{newRev,newExp,newFormula,newQuirk,notes,uid:p.uid});
+    const bp=stagePoint($('.result .stagebg'),.5,.5);
+    if(newFormula){ SND.play('sting'); FX.flash(PAL.magic,.6); FX.confetti(bp.x,bp.y-40); FX.burst(bp.x,bp.y); }
+    else if(newQuirk){ SND.play('sparkle'); FX.flash('#ff9fc0',.4); FX.burst(bp.x,bp.y,[ '#ff9fc0',PAL.magic,'#fff']); }
+    else { SND.play('sparkle'); FX.burst(bp.x,bp.y,[res.col,PAL.brassHi]); }
   }, 1100);
 }
 
@@ -678,9 +708,12 @@ function completeSale(q, p, price){
   if(q.kind==='cast'){ const c=S.cast[q.key]; c.rapport=clamp(c.rapport+O.rap+(q.asked?0.5:0),0,5); c.memories.push(`Day ${S.day}: ${p.name}, ${O.label.toLowerCase()}`); c.last=ev.outcome;
     const st=CAST[q.key].stages[q.stage]; c.stage++;
     if(st.gift && (ev.outcome==='delight'||ev.outcome==='good')){ S.inv[st.gift.ing]=(S.inv[st.gift.ing]||0)+st.gift.qty; setTimeout(()=>toast(st.gift.note,true,'heart'),600); } }
-  SND.play(ev.outcome==='oops'?'oops':'coin'); coinFly(price);
+  const offerEl=document.querySelector('.dialog [data-act="offer"], .detail [data-act="offer"], [data-act="acceptCounter"]');
+  SND.play(ev.outcome==='oops'?'oops':'coin'); coinFly(price, offerEl);
+  S3D.react(q.id, (ev.outcome==='delight'||ev.outcome==='good')?'happy':ev.outcome==='oops'?'shock':'meh');
   if(S.brewFor===q.id) S.brewFor=null;
   render();
+  const por=$('.dialog .bigpor'); if(por){ const pp=stagePoint(por); if(ev.outcome==='delight'||ev.outcome==='good'){ FX.emit(pp.x,pp.y-40,{count:14,type:'star',colors:['#ff9fc0',PAL.brassHi],speed:3.5,angle:-Math.PI/2,spread:2,gravity:.04,life:900,size:5}); } else if(ev.outcome==='oops'){ FX.emit(pp.x,pp.y,{count:16,type:'puff',colors:['#c8b0e0','#a890c8'],speed:2.4,life:800,size:8,glow:false}); } }
   if(S.queue.every(x=>x.done)) setTimeout(()=>toast('Everyone has been served. Close the shop when you\'re ready.',false,'moon'),900);
 }
 
@@ -698,13 +731,20 @@ function endDay(){
 }
 function nextDay(){
   const stories=S.pendingGaz.slice(); S.gazette.push(...stories); S.pendingGaz=[];
-  S.day++; S.brewFor=null; S.selPotion=null; buildQueue(); S.screen='shop'; render(); showGazette(stories, S.day);
+  S.day++; S.brewFor=null; S.selPotion=null; buildQueue(); S.screen='shop'; render(); showGazette(stories, S.day); SND.play('page'); SND.play('bell');
 }
 
 /* ---------- events ---------- */
 function bindEvents(){
   const stage=$('#stage');
+  stage.addEventListener('scroll', ()=>{ stage.scrollTop=0; stage.scrollLeft=0; });
+  const sceneHit = e => S3D.ok && S.screen==='shop' && !document.body.classList.contains('on-title') && e.target.classList && (e.target.classList.contains('room')||e.target.id==='view'||e.target.classList.contains('grid3'));
+  stage.addEventListener('mousemove', e=>{ if(!sceneHit(e)) return; const h=S3D.pick(e)||{}; if(S.editMode&&S.placing){ if(h.tile) ghostAt(h.tile.x,h.tile.y); return; } e.target.style.cursor=(S.editMode?h.furn:(h.cust||h.ftype==='cauldron'))?'pointer':''; });
   stage.addEventListener('click', e=>{
+    if(sceneHit(e)){ const h=S3D.pick(e)||{};
+      if(S.editMode){ if(S.placing){ if(h.tile) placeAt(h.tile.x,h.tile.y); } else if(h.furn){ S.editSel=h.furn; SND.play('click'); render(); } else if(S.editSel){ S.editSel=null; render(); } }
+      else if(h.cust) ACT.selCust({id:h.cust}); else if(h.ftype==='cauldron') ACT.go({to:'brew'});
+      return; }
     const tile = e.target.closest('.tile');
     if(tile && S.editMode && S.placing){ placeAt(+tile.dataset.x, +tile.dataset.y); return; }
     const f = e.target.closest('.furn');
@@ -717,6 +757,7 @@ function bindEvents(){
     if(S.editMode && S.placing){ const t=e.target.closest('.tile'); if(t) ghostAt(+t.dataset.x,+t.dataset.y); }
   });
   stage.addEventListener('input', e=>{
+    if(e.target.dataset && e.target.dataset.vol){ const k=e.target.dataset.vol; S.settings[k]=+e.target.value/100; e.target.nextElementSibling.textContent=e.target.value; SND.start(); SND.apply(); save(); }
     if(e.target.id==='priceRange'){ const p=getPotion(+e.target.dataset.uid); if(p){ p.price=+e.target.value; $('#priceVal').textContent=p.price+'c'; } }
     if(e.target.id==='libSearch'){ libFilter.q=e.target.value; $('#ingGrid').innerHTML=ingCards(); }
     if(e.target.id==='dbSearch'){ dbQ=e.target.value; $('#dbGrid').innerHTML=dbCards(); }
@@ -732,15 +773,18 @@ function placeAt(x,y){
   pushUndo();
   if(pl.moveId){ const o=S.layout.find(l=>l.id===pl.moveId); Object.assign(o,{x,y,rot:pl.rot}); S.editSel=o.id; }
   else { if(S.storage[pl.type]) S.storage[pl.type]--; else S.crowns-=FURN[pl.type].cost; S.layout.push(it); S.editSel=it.id; }
-  S.placing=null; SND.play('add'); render();
+  S.placing=null; SND.play('thud'); render(); if(S3D.ok){ const pp=S3D.furnPos(pl.moveId||it.id); FX.emit(pp.x,pp.y,{count:12,type:'puff',colors:['#e8d8c0','#c8b090'],speed:1.8,gravity:-.02,life:600,size:8,glow:false}); } else { const fe=document.querySelector(`.furn[data-fid="${pl.moveId||it.id}"]`); if(fe) FX.puff(fe); }
 }
 function fit(){ const s=Math.min(window.innerWidth/1600, window.innerHeight/900); $('#stage').style.transform=`translate(-50%,-50%) scale(${s})`; }
 
 /* ---------- boot ---------- */
 function boot(){
   S = load() || newState();
+  S.settings = Object.assign({sound:true,music:.55,sfx:.8,amb:.5}, S.settings);
+  ING.forEach(i=>{ if(S.inv[i.id]==null) S.inv[i.id]= i.r==='C'?3:i.r==='U'?1:0; });
   if(!S.queue.length) buildQueue();
-  bindEvents(); fit(); render();
-  if(!S.seenIntro) showIntro();
+  const fl=document.createElement('div'); fl.id='flash'; $('#stage').appendChild(fl);
+  bindEvents(); fit(); S3D.init(); FX.init(); addFoliage(); S.screen='shop'; render(); showTitle(); S3D.sync();
+  document.addEventListener('pointerdown', ()=>SND.start(), {once:true});
 }
 boot();
