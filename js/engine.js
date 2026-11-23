@@ -257,7 +257,7 @@ function priceFor(p){ return p.price!=null ? p.price : p.value; }
 function walkIns(){
   const st=shopStats(); const R=rng(hashStr('walk'+S.day+S.crowns));
   const n = Math.round(1 + st.traffic*0.7 + st.charm*0.25 + S.rep/18 + R()*2);
-  const display=[]; S.stock.forEach(p=>{ for(let i=0;i<p.qty && display.length<st.display;i++) display.push(p); });
+  const display=[]; S.stock.forEach(p=>{ const spare=Math.floor(p.qty/2); for(let i=0;i<spare && display.length<st.display;i++) display.push(p); });  // walk-ins only buy spares: the last bottle (and at least half) of every kind stays on your shelf
   const sold=[]; const heads=[];
   for(let i=0;i<n && display.length;i++){
     const idx=Math.floor(R()*display.length); const p=display[idx];

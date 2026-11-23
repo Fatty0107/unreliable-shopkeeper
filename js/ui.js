@@ -236,7 +236,7 @@ function potionDetail(p){
    ${p.sides.length?`<div class="side-eff">${icon('scroll',14)} Label notes: ${p.sides.map(s=>esc(s.replace(/\.$/,''))).join('; ')}.</div>`:''}
    <div class="statbars"><span>Stability</span><div class="bar"><i style="width:${p.stab}%;background:${p.stab>60?'#6fbf5a':p.stab>35?'#e8b84a':'#e86a5a'}"></i></div></div>
    <div class="price"><div class="row"><span style="font-weight:900;font-size:13px;color:#5a4a6a">PRICE</span><input type="range" id="priceRange" min="1" max="${Math.max(10,Math.round(p.value*2.5))}" value="${price}" data-uid="${p.uid}" aria-label="Price in crowns"><span class="val" id="priceVal">${price}c</span></div>
-    <div style="font-size:12px;font-weight:800;color:#7a6a5a">Suggested ${p.value}c · ${forCust?`${esc(first(custName(q)))} has a ${purse(r.budget).toLowerCase()}`:'Walk-ins buy displayed stock at closing'}</div></div>
+    <div style="font-size:12px;font-weight:800;color:#7a6a5a">Suggested ${p.value}c · ${forCust?`${esc(first(custName(q)))} has a ${purse(r.budget).toLowerCase()}`:'Walk-ins may buy spare bottles at closing; your last one always stays'}</div></div>
    <div class="flowrow">${forCust?`<button class="btn green" style="flex:1;font-size:17px;padding:12px" data-act="offer">${icon('check',20)}Offer to ${esc(first(custName(q)))}</button>`:''}<button class="btn ghost sm" style="color:#7a4a3a" data-act="pour" data-uid="${p.uid}">${icon('trash',14)}Pour away</button></div>`;
 }
 
@@ -620,7 +620,7 @@ const ACT = {
   addIng(d){ const id=d.id; if(avail(id)<=0){ toast(`Out of ${INGM[id].n}. Nessa sells more at the Market.`,false,'cart'); SND.play('oops'); return; }
     S.brew.mix[id]=(S.brew.mix[id]||0)+1; if(!S.brew.order.includes(id)) S.brew.order.push(id); if(S.brew.mix[id]===1) S.brew.justAdded=id; S.lastIng=id; SND.play('add');
     if(S.screen!=='brew'){ S.screen='brew'; render(); return; }
-    refreshBrew(); FX.splash(cauldronPt(), INGM[id].p[0]); const cs=$('#cstage'); if(cs){ cs.classList.remove('plop'); void cs.offsetWidth; cs.classList.add('plop'); } if($('#modal').classList.contains('show')) showViewAll(); },
+    refreshBrew(); if(S3D.ok) S3D.toss(id); else FX.splash(cauldronPt(), INGM[id].p[0]); const cs=$('#cstage'); if(cs){ cs.classList.remove('plop'); void cs.offsetWidth; cs.classList.add('plop'); } if($('#modal').classList.contains('show')) showViewAll(); },
   quickAdd(d){ ACT.addIng(d); },
   decIng(d){ const id=d.id; if(!S.brew.mix[id]) return; S.brew.mix[id]--; if(!S.brew.mix[id]){ delete S.brew.mix[id]; S.brew.order=S.brew.order.filter(x=>x!==id); } SND.play('click'); refreshBrew(); if($('#modal').classList.contains('show')) showViewAll(); },
   rmIng(d){ delete S.brew.mix[d.id]; S.brew.order=S.brew.order.filter(x=>x!==d.id); SND.play('click'); refreshBrew(); if($('#modal').classList.contains('show')) showViewAll(); },
@@ -669,9 +669,16 @@ function doBrew(){
   const mix={...S.brew.mix}; if(!Object.keys(mix).length) return;
   const res = resolve(mix, S.brew.heat, S.brew.stir);
   Object.entries(mix).forEach(([id,q])=>S.inv[id]-=q);
-  const stage=$('#cstage'); if(stage) stage.classList.add('brewing'); SND.play('bubble'); SND.play('whoosh'); const cpt=cauldronPt(); S3D.brewFx(); FX.emit(cpt.x,cpt.y,{count:40,type:'spark',colors:[res.col,PAL.magic,'#fff'],speed:5,angle:-Math.PI/2,spread:1.2,gravity:-.02,life:1100,size:4});
-  document.querySelectorAll('.token').forEach((t,i)=>{ t.style.transition='all .5s ease-in '+(i*0.05)+'s'; t.style.left='310px'; t.style.top='160px'; t.style.opacity='0'; t.style.transform='translate(-50%,-50%) scale(.3)'; });
-  setTimeout(()=>{
+  const stage=$('#cstage'); if(stage) stage.classList.add('brewing'); SND.play('bubble'); SND.play('whoosh'); const cpt=cauldronPt();
+  const willFormula = !!(res.formula && !S.formulas[res.formula]); const seenQ0=new Set(S.experiments.flatMap(e=>e.quirks)); const willQuirk=res.quirks.some(q=>!seenQ0.has(q)); const repeat=!!S.experiments.find(e=>e.key===res.key);
+  let wait = S3D.ok ? S3D.brewSeq(res,{newFormula:willFormula,newQuirk:willQuirk,quick:repeat},()=>finish()) : 0; const seqd=!!wait;
+  if(!wait){ S3D.brewFx(); FX.emit(cpt.x,cpt.y,{count:40,type:'spark',colors:[res.col,PAL.magic,'#fff'],speed:5,angle:-Math.PI/2,spread:1.2,gravity:-.02,life:1100,size:4}); wait=1100; }
+  else setTimeout(()=>SND.play(willFormula?'chime':'thud'), Math.round(wait*.46));
+  document.querySelectorAll('.token').forEach((t,i)=>{ t.style.transition='all .5s ease-in '+(i*0.05)+'s'; t.style.left='50%'; t.style.top='62%'; t.style.opacity='0'; t.style.transform='translate(-50%,-50%) scale(.3)'; });
+  let done=false; const skip=()=>{ if(done) return; S3D.brewSkip(); clearTimeout(tm); tm=setTimeout(finish,seqd?2600:520); document.removeEventListener('pointerdown',skip,true); };
+  document.addEventListener('pointerdown',skip,true);
+  let tm=setTimeout(finish, seqd ? wait*3+1500 : wait);
+  function finish(){ if(done) return; done=true; document.removeEventListener('pointerdown',skip,true);
     const newRev=[]; res.reveals.forEach(([id,b])=>{ const k=(S.known[id]=S.known[id]||[]); if(!k.includes(b)){ k.push(b); newRev.push([id,b]); } });
     const newExp = !S.experiments.find(e=>e.key===res.key);
     const seenQ = new Set(S.experiments.flatMap(e=>e.quirks));
@@ -692,7 +699,7 @@ function doBrew(){
     if(newFormula){ SND.play('sting'); FX.flash(PAL.magic,.6); FX.confetti(bp.x,bp.y-40); FX.burst(bp.x,bp.y); }
     else if(newQuirk){ SND.play('sparkle'); FX.flash('#ff9fc0',.4); FX.burst(bp.x,bp.y,[ '#ff9fc0',PAL.magic,'#fff']); }
     else { SND.play('sparkle'); FX.burst(bp.x,bp.y,[res.col,PAL.brassHi]); }
-  }, 1100);
+  }
 }
 
 function completeSale(q, p, price){
@@ -710,7 +717,7 @@ function completeSale(q, p, price){
     if(st.gift && (ev.outcome==='delight'||ev.outcome==='good')){ S.inv[st.gift.ing]=(S.inv[st.gift.ing]||0)+st.gift.qty; setTimeout(()=>toast(st.gift.note,true,'heart'),600); } }
   const offerEl=document.querySelector('.dialog [data-act="offer"], .detail [data-act="offer"], [data-act="acceptCounter"]');
   SND.play(ev.outcome==='oops'?'oops':'coin'); coinFly(price, offerEl);
-  S3D.react(q.id, (ev.outcome==='delight'||ev.outcome==='good')?'happy':ev.outcome==='oops'?'shock':'meh');
+  S3D.give(q.id); S3D.react(q.id, (ev.outcome==='delight'||ev.outcome==='good')?'happy':ev.outcome==='oops'?'shock':'meh');
   if(S.brewFor===q.id) S.brewFor=null;
   render();
   const por=$('.dialog .bigpor'); if(por){ const pp=stagePoint(por); if(ev.outcome==='delight'||ev.outcome==='good'){ FX.emit(pp.x,pp.y-40,{count:14,type:'star',colors:['#ff9fc0',PAL.brassHi],speed:3.5,angle:-Math.PI/2,spread:2,gravity:.04,life:900,size:5}); } else if(ev.outcome==='oops'){ FX.emit(pp.x,pp.y,{count:16,type:'puff',colors:['#c8b0e0','#a890c8'],speed:2.4,life:800,size:8,glow:false}); } }
